@@ -37,7 +37,7 @@ QRIS_URL = 'https://drive.google.com/file/d/1iUYOnYMLiU1AF41N1gWmCdhqi1a3YpCp/vi
 # --- KONFIGURASI DATABASE GOOGLE SHEETS ---
 WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx1rThAIqRT0rh-o-qzu85N5X6hxcx_u24YV6aD1gxnF0GWMCKoHea7GExadVgC7uEC-g/exec'
 
-PRODUCTS_PER_PAGE = 15
+PRODUCTS_PER_PAGE = 10
 ADMIN_PRODUCTS_PER_PAGE = 8
 
 logging.basicConfig(
@@ -449,6 +449,15 @@ def parse_variant_upsert_input(text):
 async def show_catalog_from_message(message):
     await send_banner_message(message, render_catalog_text(1), reply_markup=get_catalog_keyboard(1), parse_mode=None)
 
+def hapus_pekerjaan_trx(context, trx_id):
+    """Menghapus semua job pengingat dan auto-batal untuk ID transaksi tertentu."""
+    current_jobs = context.job_queue.get_jobs_by_name(f"reminder_{trx_id}")
+    for job in current_jobs:
+        job.schedule_removal()
+    current_jobs = context.job_queue.get_jobs_by_name(f"autocancel_{trx_id}")
+    for job in current_jobs:
+        job.schedule_removal()
+
 # --- HANDLER UTAMA ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -766,19 +775,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"_Sisa Saldo Anda: {format_rupiah(USERS[user_id]['saldo'])}_"
                     )
                     
-                    # PERBAIKAN: Gunakan edit_caption jika pesan menggunakan gambar banner
                     if query.message.photo:
                         return await query.message.edit_caption(caption=pesan_sukses, parse_mode='Markdown')
                     else:
                         return await query.message.edit_text(text=pesan_sukses, parse_mode='Markdown')
 
-                # --- LOGIKA JIKA SALDO KURANG / KOSONG ---
+                # --- LOGIKA JIKA SALDO KURANG ---
                 kurang = nominal - saldo_user
-                
-                # Memunculkan Pop-up peringatan di tengah layar
                 await query.answer("❌ Saldo tidak cukup / kosong. Silakan deposit dahulu.", show_alert=True)
                 
-                # Keyboard diarahkan ke Deposit Saldo
                 keyboard = [
                     [InlineKeyboardButton("💳 Deposit Saldo", callback_data="menu_deposit")],
                     [InlineKeyboardButton("📱 Langsung via QRIS", callback_data=f"method_prod_qris_{pid}_{variant_name}")],
@@ -799,7 +804,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     return await query.message.edit_text(text=pesan_kurang, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-            # Jika metode == "QRIS", lanjut bikin invoice Pending
+            # Jika metode == "QRIS"
             trx_id = f"PRD-{uuid.uuid4().hex[:6].upper()}"
             TRANSAKSI[trx_id] = {
                 "trx_id": trx_id, 
@@ -835,7 +840,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "1. Simpan gambar QRIS ini ke galeri Anda.\n"
             "2. Buka aplikasi m-Banking / e-Wallet.\n"
             "3. Scan / upload QRIS lalu lakukan pembayaran.\n\n"
-            "⚠️ _Batas waktu 5 menit. Segera konfirmasi setelah sukses._"
+            "⚠️ _Batas waktu 5 menit. Sistem akan membatalkan otomatis jika tidak ada pembayaran._"
         )
         await query.message.delete()
         
@@ -850,10 +855,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ *Error Sistem:* Gambar QRIS tidak dapat diakses.", parse_mode='Markdown')
             return
 
-        context.job_queue.run_once(pengingat_trx_job, 300, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"reminder_{trx_id}")
+        # Penjadwalan: Menit ke-4 (Peringatan) dan Menit ke-5 (Batal Otomatis)
+        context.job_queue.run_once(pengingat_trx_job, 240, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"reminder_{trx_id}")
+        context.job_queue.run_once(auto_batal_trx_job, 300, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"autocancel_{trx_id}")
 
     elif data.startswith("bayartrx_"):
         trx_id = data.split("_")[1]
+        # Hapus job penjadwalan karena user sudah konfirmasi bayar
+        hapus_pekerjaan_trx(context, trx_id)
+
         trx = TRANSAKSI.get(trx_id)
         if trx and trx['status'] == 'pending':
             trx['status'] = 'waiting_admin'
@@ -908,17 +918,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID:
             return await query.answer("Akses Ditolak! Anda bukan Admin.", show_alert=True)
         trx_id = data.split("_")[1]
+        hapus_pekerjaan_trx(context, trx_id)
+        
         trx = TRANSAKSI.get(trx_id)
         if trx and trx['status'] == 'waiting_admin':
             trx['status'] = 'success'
             uid = trx['user_id']
-
             await send_to_db("update_transaksi", {"trx_id": trx_id, "status": "LUNAS"})
 
             if trx['jenis'] == 'deposit':
                 USERS[uid]['saldo'] += trx['jumlah']
                 await send_to_db("deposit_saldo", {"user_id": uid, "jumlah": trx['jumlah']})
-
                 await query.message.edit_text(f"✅ Deposit `{trx_id}` sebesar `{format_rupiah(trx['jumlah'])}` untuk User `{uid}` telah *DISETUJUI*.", parse_mode='Markdown')
                 pesan_sukses_user = (
                     "✅ *DEPOSIT BERHASIL DIPROSES*\n"
@@ -933,7 +943,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=uid, text=pesan_sukses_user, parse_mode='Markdown')
                 except Exception:
                     pass
-
             elif trx['jenis'] == 'produk':
                 pid = trx['pid']
                 variant_name = trx['variant']
@@ -949,12 +958,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "varian": variant_name,
                     "harga": trx['jumlah']
                 })
-
                 await send_to_db("buy_product", {
                     "user_id": uid, "pid": pid, "variant": variant_name, 
                     "harga": trx['jumlah'], "waktu": trx['waktu'], "nama_produk": product['nama'], "metode": "QRIS"
                 })
-
                 await query.message.edit_text(f"✅ Pembelian produk `{trx_id}` ({product['nama']} - {variant_name}) untuk User `{uid}` telah *DISETUJUI*.", parse_mode='Markdown')
                 pesan_sukses_user = (
                     "🎉 *PEMBELIAN BERHASIL DIPROSES*\n"
@@ -976,11 +983,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID:
             return await query.answer("Akses Ditolak! Anda bukan Admin.", show_alert=True)
         trx_id = data.split("_")[1]
+        hapus_pekerjaan_trx(context, trx_id)
+        
         trx = TRANSAKSI.get(trx_id)
         if trx and trx['status'] == 'waiting_admin':
             trx['status'] = 'rejected'
             await send_to_db("update_transaksi", {"trx_id": trx_id, "status": "rejected"})
-
             uid = trx['user_id']
             jenis_str = "Deposit" if trx['jenis'] == "deposit" else "Pembelian"
             await query.message.edit_text(f"❌ {jenis_str} `{trx_id}` untuk User `{uid}` telah *DITOLAK*.", parse_mode='Markdown')
@@ -999,10 +1007,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("bataltrx_"):
         trx_id = data.split("_")[1]
+        hapus_pekerjaan_trx(context, trx_id)
+        
         if trx_id in TRANSAKSI and TRANSAKSI[trx_id]['status'] == 'pending':
             TRANSAKSI[trx_id]['status'] = 'cancelled'
             await send_to_db("update_transaksi", {"trx_id": trx_id, "status": "cancelled"})
-
             if query.message.photo:
                 await query.message.edit_caption(caption=f"❌ Invoice `{trx_id}` berhasil dibatalkan.", parse_mode='Markdown')
             else:
@@ -1216,6 +1225,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def pengingat_trx_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job pengingat pada menit ke-4."""
     job = context.job
     trx_id = job.data['trx_id']
     chat_id = job.data['chat_id']
@@ -1223,19 +1233,42 @@ async def pengingat_trx_job(context: ContextTypes.DEFAULT_TYPE):
     if trx and trx['status'] == 'pending':
         deskripsi = "Deposit Saldo" if trx['jenis'] == 'deposit' else "Pembelian Produk"
         pesan_pengingat = (
-            "⏰ *PENGINGAT PEMBAYARAN* ⏰\n"
+            "⚠️ *PERINGATAN PEMBAYARAN* ⚠️\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Halo Kak! Invoice `{trx_id}` untuk *{deskripsi}* sebesar `{format_rupiah(trx['jumlah'])}` menunggu pembayaran Anda.\n\n"
-            "Jika Anda sudah transfer, segera klik tombol *Saya Sudah Transfer*."
+            f"Halo Kak! Invoice `{trx_id}` untuk *{deskripsi}* sebesar `{format_rupiah(trx['jumlah'])}` akan **BATAL OTOMATIS** dalam 1 menit lagi.\n\n"
+            "Segera selesaikan pembayaran dan klik tombol di bawah agar pesanan tidak terhapus."
         )
         keyboard = [
             [InlineKeyboardButton("✅ Saya Sudah Transfer", callback_data=f"bayartrx_{trx_id}")],
-            [InlineKeyboardButton("❌ Batalkan", callback_data=f"bataltrx_{trx_id}")]
+            [InlineKeyboardButton("❌ Batalkan Sekarang", callback_data=f"bataltrx_{trx_id}")]
         ]
         try:
             await context.bot.send_message(chat_id=chat_id, text=pesan_pengingat, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Gagal mengirim pengingat: {e}")
+
+async def auto_batal_trx_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job pembatalan otomatis pada menit ke-5."""
+    job = context.job
+    trx_id = job.data['trx_id']
+    chat_id = job.data['chat_id']
+    trx = TRANSAKSI.get(trx_id)
+    if trx and trx['status'] == 'pending':
+        trx['status'] = 'cancelled'
+        await send_to_db("update_transaksi", {"trx_id": trx_id, "status": "cancelled_auto"})
+        
+        pesan_batal = (
+            "❌ *INVOICE KADALUWARSA*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"No. Referensi : `{trx_id}`\n"
+            "Status        : 🔴 *BATAL OTOMATIS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Waktu pembayaran (5 menit) telah habis. Silakan buat pesanan baru jika ingin melanjutkan."
+        )
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=pesan_batal, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Gagal mengirim pesan batal otomatis: {e}")
 
 def main():
     load_data_from_db()
@@ -1250,9 +1283,7 @@ def main():
     WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').strip()
 
     if WEBHOOK_URL:
-        # Menghapus garis miring (/) di akhir URL jika tidak sengaja tertulis
         clean_webhook_url = WEBHOOK_URL.rstrip('/')
-        
         print(f"Mulai mode WEBHOOK di port {PORT}...")
         application.run_webhook(
             listen="0.0.0.0",
