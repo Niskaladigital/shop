@@ -3,7 +3,7 @@ import math
 import os
 import uuid
 import asyncio
-import time # [UPGRADE] Tambahan untuk manajemen waktu realtime
+import time 
 import requests
 from datetime import datetime
 
@@ -35,7 +35,7 @@ BANNER_URL = 'https://drive.google.com/file/d/167GyLl9yNc9TwQejQjZXS2D5ZdNzWd5-/
 QRIS_URL = 'https://drive.google.com/file/d/1iUYOnYMLiU1AF41N1gWmCdhqi1a3YpCp/view?usp=drive_link'
 
 # --- KONFIGURASI DATABASE GOOGLE SHEETS ---
-WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxNAxFYKD06i2bAmN6U3BaiSfcRG50ISC48gmzaEyBPlsbm3rCT2yxGw40QwUBtGbcbOw/exec'
+WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzVJDL8CuXPjTcgoDDAINiPVg8oJuKZMf-z2JFQGbBqBaINeFEZ7XgEhO8hsDUHs9Rv/exec'
 
 PRODUCTS_PER_PAGE = 15
 ADMIN_PRODUCTS_PER_PAGE = 8
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 USERS = {}
 TRANSAKSI = {}
 PRODUK = {}
-LAST_CATALOG_SYNC = 0 # [UPGRADE] Variabel untuk mencegah bot spam request database
+LAST_CATALOG_SYNC = 0
 
 def get_direct_gdrive_link(url):
     if "drive.google.com/file/d/" in url:
@@ -88,16 +88,13 @@ async def send_to_db(action, data):
             logger.error(f"Gagal push ke DB ({action}): {e}")
     asyncio.create_task(asyncio.to_thread(_post))
 
-# [UPGRADE] FUNGSI REAL-TIME USER SYNC (Menjawab keluhan profil lambat/tidak realtime)
 async def sync_user_data(user_id):
     try:
         resp = await asyncio.to_thread(requests.post, WEBAPP_URL, json={"action": "get_user", "data": {"user_id": user_id}}, timeout=10)
         res_data = resp.json()
         if res_data.get("status") == "success" and res_data.get("data"):
-            # Update data riwayat dan saldo di memori secara realtime
             if user_id in USERS:
                 USERS[user_id].update(res_data["data"])
-                # Pindahkan riwayat_json ke dictionary riwayat standar bot
                 USERS[user_id]['riwayat'] = res_data["data"].get("riwayat_json", [])
             else:
                 USERS[user_id] = res_data["data"]
@@ -105,10 +102,8 @@ async def sync_user_data(user_id):
     except Exception as e:
         logger.error(f"Gagal realtime sync user: {e}")
 
-# [UPGRADE] FUNGSI REAL-TIME KATALOG SYNC
 async def sync_katalog_realtime():
     global PRODUK, LAST_CATALOG_SYNC
-    # Cukup sync jika lebih dari 15 detik untuk efisiensi tinggi
     if time.time() - LAST_CATALOG_SYNC > 15:
         try:
             resp = await asyncio.to_thread(requests.post, WEBAPP_URL, json={"action": "get_all_data"}, timeout=15)
@@ -223,7 +218,6 @@ def get_catalog_keyboard(page=1):
 
     keyboard.append([InlineKeyboardButton("🏠 Menu Utama", callback_data="go_home")])
     return InlineKeyboardMarkup(keyboard)
-
 
 def render_product_detail(pid):
     product = PRODUK[pid]
@@ -455,7 +449,6 @@ def parse_variant_upsert_input(text):
 async def show_catalog_from_message(message):
     await send_banner_message(message, render_catalog_text(1), reply_markup=get_catalog_keyboard(1), parse_mode=None)
 
-
 # --- HANDLER UTAMA ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -543,7 +536,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_catalog_from_message(update.message)
 
     elif text == "👤 Profil & Akun":
-        # [UPGRADE] Tarik data profil dan saldo terbaru (real-time) sebelum ditampilkan
         loading_msg = await update.message.reply_text("⏳ _Loading..._", parse_mode='Markdown')
         await sync_user_data(user_id)
         await loading_msg.delete()
@@ -576,7 +568,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_banner_message(update.message, pesan, reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == "📜 Riwayat Beli":
-        # [UPGRADE] Tarik riwayat transaksi realtime untuk mencegah riwayat delay
         loading_msg = await update.message.reply_text("⏳ _Loading..._", parse_mode='Markdown')
         await sync_user_data(user_id)
         await loading_msg.delete()
@@ -600,7 +591,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📞 *HUBUNGI CUSTOMER SERVICE*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "Jika Anda membutuhkan bantuan, silakan hubungi admin kami melalui tautan berikut:\n\n"
-            "👉 [Klik di sini untuk Chat Admin](https://t.me/Minshop_Niskala)"
+            "👉 [Klik di sini untuk Chat Admin](https://t.me/niskaladigital)"
         )
         await send_banner_message(update.message, pesan, parse_mode='Markdown')
 
@@ -614,7 +605,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🧾 Pending Transaksi", callback_data="admin_pending")]
         ])
         await send_banner_message(update.message, get_admin_dashboard_text(), reply_markup=keyboard)
-
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -634,16 +624,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await append_with_banner(query, context, text, parse_mode='Markdown')
 
     elif data.startswith("catalog_page_"):
-        await sync_katalog_realtime() # [UPGRADE] real-time load
+        await sync_katalog_realtime()
         page = int(data.split("_")[-1])
         await append_with_banner(query, context, render_catalog_text(page), reply_markup=get_catalog_keyboard(page), parse_mode=None)
 
     elif data == "menu_katalog":
-        await sync_katalog_realtime() # [UPGRADE] real-time load
+        await sync_katalog_realtime()
         await append_with_banner(query, context, render_catalog_text(1), reply_markup=get_catalog_keyboard(1), parse_mode=None)
 
     elif data.startswith("detail_"):
-        await sync_katalog_realtime() # [UPGRADE] real-time load
+        await sync_katalog_realtime()
         pid = data.split("_", 1)[1]
         if pid not in PRODUK:
             return await query.answer("Produk tidak ditemukan.", show_alert=True)
@@ -652,7 +642,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("var_"):
         _, pid, variant_name = data.split("_", 2)
         
-        await sync_katalog_realtime() # Pastikan stok paling baru
+        await sync_katalog_realtime()
         product = PRODUK.get(pid)
         if not product:
             return await query.answer("Produk tidak ditemukan!", show_alert=True)
@@ -681,7 +671,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await append_with_banner(query, context, pesan, reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "menu_deposit":
-        # logic deposit menu yang sudah bagus tetap dibiarkan
         pesan = (
             "💳 *ISI SALDO (DEPOSIT)*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -745,7 +734,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nominal = variant['price']
 
             if metode == "saldo":
-                # [UPGRADE] Tarik saldo asli realtime sebelum memotong
                 await sync_user_data(user_id)
                 saldo_user = USERS[user_id]['saldo']
                 if saldo_user >= nominal:
@@ -760,7 +748,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "harga": nominal
                     })
                     
-                    # [UPGRADE PENTING] Sisipkan metode: "saldo" agar apps script memotong saldo
                     await send_to_db("buy_product", {
                         "user_id": user_id, "pid": pid, "variant": variant_name, 
                         "harga": nominal, "waktu": waktu, "nama_produk": product['nama'], "metode": "saldo"
@@ -778,24 +765,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"`{variant['link_download']}`\n\n"
                         f"_Sisa Saldo Anda: {format_rupiah(USERS[user_id]['saldo'])}_"
                     )
-                    return await query.message.edit_text(pesan_sukses, parse_mode='Markdown')
+                    
+                    # PERBAIKAN: Gunakan edit_caption jika pesan menggunakan gambar banner
+                    if query.message.photo:
+                        return await query.message.edit_caption(caption=pesan_sukses, parse_mode='Markdown')
+                    else:
+                        return await query.message.edit_text(text=pesan_sukses, parse_mode='Markdown')
 
-                # Logika Saldo Kurang sudah benar, hanya lebih terjamin keakuratan saldonya sekarang
+                # --- LOGIKA JIKA SALDO KURANG / KOSONG ---
                 kurang = nominal - saldo_user
-                await query.answer(f"❌ Saldo kurang {format_rupiah(kurang)}!", show_alert=True)
+                
+                # Memunculkan Pop-up peringatan di tengah layar
+                await query.answer("❌ Saldo tidak cukup / kosong. Silakan deposit dahulu.", show_alert=True)
+                
+                # Keyboard diarahkan ke Deposit Saldo
                 keyboard = [
+                    [InlineKeyboardButton("💳 Deposit Saldo", callback_data="menu_deposit")],
                     [InlineKeyboardButton("📱 Langsung via QRIS", callback_data=f"method_prod_qris_{pid}_{variant_name}")],
                     [InlineKeyboardButton("⬅️ Batal", callback_data=f"detail_{pid}")]
                 ]
+                
                 pesan_kurang = (
                     "⚠️ *SALDO TIDAK MENCUKUPI*\n"
                     "━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"Harga Produk : `{format_rupiah(nominal)}`\n"
                     f"Saldo Anda   : `{format_rupiah(saldo_user)}`\n"
                     f"Kekurangan   : `{format_rupiah(kurang)}`\n\n"
-                    "Silakan pilih metode pembayaran lain di bawah ini."
+                    "Silakan isi saldo Anda terlebih dahulu dengan menekan tombol di bawah ini."
                 )
-                return await query.message.edit_text(pesan_kurang, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+                if query.message.photo:
+                    return await query.message.edit_caption(caption=pesan_kurang, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                else:
+                    return await query.message.edit_text(text=pesan_kurang, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
             # Jika metode == "QRIS", lanjut bikin invoice Pending
             trx_id = f"PRD-{uuid.uuid4().hex[:6].upper()}"
@@ -948,7 +950,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "harga": trx['jumlah']
                 })
 
-                # [UPGRADE PENTING] Pembayaran produk Cash via QRIS, jangan potong saldo! metode = QRIS.
                 await send_to_db("buy_product", {
                     "user_id": uid, "pid": pid, "variant": variant_name, 
                     "harga": trx['jumlah'], "waktu": trx['waktu'], "nama_produk": product['nama'], "metode": "QRIS"
@@ -1007,7 +1008,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.message.edit_text(text=f"❌ Invoice `{trx_id}` berhasil dibatalkan.", parse_mode='Markdown')
 
-    # ADMIN MENU BAWAHAN LAINNYA TIDAK SAYA UBAH KARENA SUDAH SEMPURNA
     elif data == "admin_dashboard":
         if user_id != ADMIN_ID:
             return await query.answer("Akses Ditolak!", show_alert=True)
@@ -1250,8 +1250,16 @@ def main():
     WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').strip()
 
     if WEBHOOK_URL:
+        # Menghapus garis miring (/) di akhir URL jika tidak sengaja tertulis
+        clean_webhook_url = WEBHOOK_URL.rstrip('/')
+        
         print(f"Mulai mode WEBHOOK di port {PORT}...")
-        application.run_webhook(listen="0.0.0.0", port=PORT, webhook_url=f"{WEBHOOK_URL}")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TOKEN, 
+            webhook_url=f"{clean_webhook_url}/{TOKEN}" 
+        )
     else:
         print("Bot Toko Digital Premium sedang berjalan dengan mode POLLING...")
         application.run_polling()
