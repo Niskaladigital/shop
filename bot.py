@@ -544,7 +544,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "👤 Profil & Akun":
         # [UPGRADE] Tarik data profil dan saldo terbaru (real-time) sebelum ditampilkan
-        loading_msg = await update.message.reply_text("⏳ _Mensinkronkan data profil real-time..._", parse_mode='Markdown')
+        loading_msg = await update.message.reply_text("⏳ _Loading..._", parse_mode='Markdown')
         await sync_user_data(user_id)
         await loading_msg.delete()
         
