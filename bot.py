@@ -31,7 +31,7 @@ if not TOKEN:
     raise ValueError('BOT_TOKEN belum di-set di environment variables.')
 
 # --- KONFIGURASI GAMBAR DARI GOOGLE DRIVE ---
-BANNER_URL = 'https://drive.google.com/file/d/167GyLl9yNc9TwQejQjZXS2D5ZdNzWd5-/view?usp=drive_link' 
+BANNER_URL = 'https://drive.google.com/file/d/1HXqgLdk74-EIYPEVgd6jg4T3bnnttTFJ/view?usp=drive_link' 
 QRIS_URL = 'https://drive.google.com/file/d/1iUYOnYMLiU1AF41N1gWmCdhqi1a3YpCp/view?usp=drive_link'
 
 # --- KONFIGURASI DATABASE GOOGLE SHEETS ---
