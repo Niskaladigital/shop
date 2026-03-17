@@ -25,7 +25,7 @@ from telegram.ext import (
 
 # --- KONFIGURASI BOT ---
 TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = int(os.environ.get('ADMIN_ID', '6348415594'))
+ADMIN_ID = int(os.environ.get('ADMIN_ID', '8415452669'))
 
 if not TOKEN:
     raise ValueError('BOT_TOKEN belum di-set di environment variables.')
@@ -35,7 +35,7 @@ BANNER_URL = 'https://drive.google.com/file/d/167GyLl9yNc9TwQejQjZXS2D5ZdNzWd5-/
 QRIS_URL = 'https://drive.google.com/file/d/1iUYOnYMLiU1AF41N1gWmCdhqi1a3YpCp/view?usp=drive_link'
 
 # --- KONFIGURASI DATABASE GOOGLE SHEETS ---
-WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzVJDL8CuXPjTcgoDDAINiPVg8oJuKZMf-z2JFQGbBqBaINeFEZ7XgEhO8hsDUHs9Rv/exec'
+WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx1rThAIqRT0rh-o-qzu85N5X6hxcx_u24YV6aD1gxnF0GWMCKoHea7GExadVgC7uEC-g/exec'
 
 PRODUCTS_PER_PAGE = 15
 ADMIN_PRODUCTS_PER_PAGE = 8
