@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: toko-digital-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # KOREKSI: Mengubah bottester.py menjadi bot.py sesuai nama file yang kamu upload
+    startCommand: python bot.py
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        value: "8415452669"
+      - key: WEBHOOK_URL
+        sync: false
