@@ -37,7 +37,7 @@ QRIS_URL = 'https://drive.google.com/file/d/1iUYOnYMLiU1AF41N1gWmCdhqi1a3YpCp/vi
 # --- KONFIGURASI DATABASE GOOGLE SHEETS ---
 WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx1rThAIqRT0rh-o-qzu85N5X6hxcx_u24YV6aD1gxnF0GWMCKoHea7GExadVgC7uEC-g/exec'
 
-PRODUCTS_PER_PAGE = 10
+PRODUCTS_PER_PAGE = 15
 ADMIN_PRODUCTS_PER_PAGE = 8
 
 logging.basicConfig(
@@ -451,6 +451,11 @@ async def show_catalog_from_message(message):
 
 def hapus_pekerjaan_trx(context, trx_id):
     """Menghapus semua job pengingat dan auto-batal untuk ID transaksi tertentu."""
+    # Perbaikan: Tambahkan pengecekan ekstra pada context.job_queue
+    if not context or not hasattr(context, 'job_queue') or not context.job_queue:
+        logger.warning("Fitur JobQueue (Sistem Pengingat) tidak tersedia.")
+        return
+        
     current_jobs = context.job_queue.get_jobs_by_name(f"reminder_{trx_id}")
     for job in current_jobs:
         job.schedule_removal()
@@ -855,13 +860,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ *Error Sistem:* Gambar QRIS tidak dapat diakses.", parse_mode='Markdown')
             return
 
-        # Penjadwalan: Menit ke-4 (Peringatan) dan Menit ke-5 (Batal Otomatis)
-        context.job_queue.run_once(pengingat_trx_job, 240, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"reminder_{trx_id}")
-        context.job_queue.run_once(auto_batal_trx_job, 300, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"autocancel_{trx_id}")
+        # --- PENJADWALAN PENGINGAT ---
+        if hasattr(context, 'job_queue') and context.job_queue:
+            context.job_queue.run_once(pengingat_trx_job, 240, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"reminder_{trx_id}")
+            context.job_queue.run_once(auto_batal_trx_job, 300, data={'trx_id': trx_id, 'chat_id': query.message.chat_id}, name=f"autocancel_{trx_id}")
+        else:
+            logger.warning("JobQueue tidak aktif. Pengingat tidak dijadwalkan.")
 
     elif data.startswith("bayartrx_"):
         trx_id = data.split("_")[1]
-        # Hapus job penjadwalan karena user sudah konfirmasi bayar
         hapus_pekerjaan_trx(context, trx_id)
 
         trx = TRANSAKSI.get(trx_id)
@@ -1226,6 +1233,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pengingat_trx_job(context: ContextTypes.DEFAULT_TYPE):
     """Job pengingat pada menit ke-4."""
+    if not context or not hasattr(context, 'job_queue') or not context.job_queue:
+        return
+
     job = context.job
     trx_id = job.data['trx_id']
     chat_id = job.data['chat_id']
@@ -1249,6 +1259,9 @@ async def pengingat_trx_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def auto_batal_trx_job(context: ContextTypes.DEFAULT_TYPE):
     """Job pembatalan otomatis pada menit ke-5."""
+    if not context or not hasattr(context, 'job_queue') or not context.job_queue:
+        return
+
     job = context.job
     trx_id = job.data['trx_id']
     chat_id = job.data['chat_id']
@@ -1271,10 +1284,26 @@ async def auto_batal_trx_job(context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Gagal mengirim pesan batal otomatis: {e}")
 
 def main():
+    # Fix for RuntimeError: There is no current event loop
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     load_data_from_db()
     logger.info('Menyalakan bot Telegram...')
     logger.info(f'ADMIN_ID aktif: {ADMIN_ID}')
+    
+    # --- INISIALISASI APPLICATION ---
     application = Application.builder().token(TOKEN).build()
+    
+    # Cek apakah JobQueue berhasil dimuat
+    if application.job_queue:
+        logger.info("✅ JobQueue (Sistem Pengingat) berhasil diaktifkan.")
+    else:
+        logger.error("❌ JobQueue GAGAL dimuat!")
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(CallbackQueryHandler(button_handler))
