@@ -537,7 +537,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "🛒 Katalog Produk":
-        loading_msg = await update.message.reply_text("⏳ _Sinkronisasi katalog dari server..._", parse_mode='Markdown')
+        loading_msg = await update.message.reply_text("⏳ _Loading..._", parse_mode='Markdown')
         await sync_katalog_realtime()
         await loading_msg.delete()
         await show_catalog_from_message(update.message)
@@ -577,7 +577,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "📜 Riwayat Beli":
         # [UPGRADE] Tarik riwayat transaksi realtime untuk mencegah riwayat delay
-        loading_msg = await update.message.reply_text("⏳ _Menarik riwayat terbaru dari database..._", parse_mode='Markdown')
+        loading_msg = await update.message.reply_text("⏳ _Loading..._", parse_mode='Markdown')
         await sync_user_data(user_id)
         await loading_msg.delete()
         
@@ -600,7 +600,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📞 *HUBUNGI CUSTOMER SERVICE*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "Jika Anda membutuhkan bantuan, silakan hubungi admin kami melalui tautan berikut:\n\n"
-            "👉 [Klik di sini untuk Chat Admin](https://t.me/niskaladigital)"
+            "👉 [Klik di sini untuk Chat Admin](https://t.me/Minshop_Niskala)"
         )
         await send_banner_message(update.message, pesan, parse_mode='Markdown')
 
