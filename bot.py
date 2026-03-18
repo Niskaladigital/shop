@@ -451,9 +451,7 @@ async def show_catalog_from_message(message):
 
 def hapus_pekerjaan_trx(context, trx_id):
     """Menghapus semua job pengingat dan auto-batal untuk ID transaksi tertentu."""
-    # Perbaikan: Tambahkan pengecekan ekstra pada context.job_queue
     if not context or not hasattr(context, 'job_queue') or not context.job_queue:
-        logger.warning("Fitur JobQueue (Sistem Pengingat) tidak tersedia.")
         return
         
     current_jobs = context.job_queue.get_jobs_by_name(f"reminder_{trx_id}")
@@ -1284,7 +1282,6 @@ async def auto_batal_trx_job(context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Gagal mengirim pesan batal otomatis: {e}")
 
 def main():
-    # PERBAIKAN KRUSIAL: Memaksa Python membuat event loop di server Render
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -1297,9 +1294,9 @@ def main():
     
     application = Application.builder().token(TOKEN).build()
     
-    # Cek apakah JobQueue (Peringatan Pembayaran) berhasil dimuat
+    # Cek apakah JobQueue berhasil dimuat
     if application.job_queue:
-        logger.info("✅ JobQueue (Sistem Pengingat) BERHASIL diaktifkan.")
+        logger.info("✅ JobQueue (Sistem Pengingat) berhasil diaktifkan.")
     else:
         logger.error("❌ JobQueue GAGAL dimuat! Pastikan apscheduler terinstall.")
 
