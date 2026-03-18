@@ -4,7 +4,6 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    # KOREKSI: Mengubah bottester.py menjadi bot.py sesuai nama file yang kamu upload
     startCommand: python bot.py
     autoDeploy: true
     envVars:
