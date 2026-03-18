@@ -1284,7 +1284,7 @@ async def auto_batal_trx_job(context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Gagal mengirim pesan batal otomatis: {e}")
 
 def main():
-    # Fix for RuntimeError: There is no current event loop
+    # PERBAIKAN KRUSIAL: Memaksa Python membuat event loop di server Render
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -1295,14 +1295,13 @@ def main():
     logger.info('Menyalakan bot Telegram...')
     logger.info(f'ADMIN_ID aktif: {ADMIN_ID}')
     
-    # --- INISIALISASI APPLICATION ---
     application = Application.builder().token(TOKEN).build()
     
-    # Cek apakah JobQueue berhasil dimuat
+    # Cek apakah JobQueue (Peringatan Pembayaran) berhasil dimuat
     if application.job_queue:
-        logger.info("✅ JobQueue (Sistem Pengingat) berhasil diaktifkan.")
+        logger.info("✅ JobQueue (Sistem Pengingat) BERHASIL diaktifkan.")
     else:
-        logger.error("❌ JobQueue GAGAL dimuat!")
+        logger.error("❌ JobQueue GAGAL dimuat! Pastikan apscheduler terinstall.")
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -1312,7 +1311,9 @@ def main():
     WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').strip()
 
     if WEBHOOK_URL:
+        # Menghapus garis miring (/) di akhir URL jika tidak sengaja tertulis
         clean_webhook_url = WEBHOOK_URL.rstrip('/')
+        
         print(f"Mulai mode WEBHOOK di port {PORT}...")
         application.run_webhook(
             listen="0.0.0.0",
